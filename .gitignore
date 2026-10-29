@@ -1,0 +1,15 @@
+.env
+data/raw/
+data/extracted/
+data/processed/
+model/
+output/
+assets/
+/tmp/
+__pycache__/
+*.pyc
+.DS_Store
+venv/
+*.egg-info/
+dist/
+build/
