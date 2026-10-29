@@ -23,7 +23,7 @@ RAW.mkdir(parents=True, exist_ok=True)
 EXTRACTED = Path("data/extracted")
 EXTRACTED.mkdir(parents=True, exist_ok=True)
 
-TARGET_ERANGEL = 50
+TARGET_ERANGEL = 9999
 RATE_CALLS = []
 RATE_LIMIT = 10
 RATE_WINDOW = 60
@@ -157,8 +157,51 @@ def extract_telemetry(url, match_id):
     return True
 
 
+def gather_match_ids_from_cached_tournaments():
+    """Collect all match IDs from already-cached tournament detail files."""
+    all_mids = []
+    seen = set()
+    for f in sorted(RAW.glob("tournament_*.json")):
+        data = json.loads(f.read_text())
+        matches = data.get("data", {}).get("relationships", {}).get("matches", {}).get("data", [])
+        for m in matches:
+            mid = m["id"]
+            if mid not in seen:
+                seen.add(mid)
+                all_mids.append(mid)
+    return all_mids
+
+
+def process_match_id(mid, erangel_ids_set):
+    """Check one match: is it Erangel? If so, extract telemetry. Returns True if Erangel."""
+    if mid in erangel_ids_set:
+        return False
+
+    match_cache = RAW / f"match_{mid}.json"
+    try:
+        mdata = api_get(f"/shards/tournament/matches/{mid}", match_cache)
+    except requests.HTTPError as e:
+        print(f"    match error: {e}", flush=True)
+        return False
+
+    map_name = mdata.get("data", {}).get("attributes", {}).get("mapName", "")
+    if map_name != "Baltic_Main":
+        return False
+
+    tel_url = None
+    for item in mdata.get("included", []):
+        if item.get("type") == "asset" and "telemetry" in item.get("attributes", {}).get("name", "").lower():
+            tel_url = item["attributes"]["URL"]
+            break
+
+    if not tel_url:
+        return False
+
+    return extract_telemetry(tel_url, mid)
+
+
 def main():
-    print("=== PUBG Erangel Data Collection ===", flush=True)
+    print("=== PUBG Erangel Data Collection (all tournaments) ===", flush=True)
 
     # Step 1: Load tournament list
     tourney_cache = RAW / "tournaments.json"
@@ -166,103 +209,104 @@ def main():
     tournaments = data.get("data", [])
     print(f"Total tournaments: {len(tournaments)}", flush=True)
 
-    # Filter last 12 months, sort newest first
-    cutoff = datetime(2025, 10, 29, tzinfo=timezone.utc)
-    recent = []
+    # Sort newest first
+    sorted_tournaments = []
     for t in tournaments:
         created = t.get("attributes", {}).get("createdAt", "")
         if created:
             try:
                 dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
-                if dt >= cutoff:
-                    recent.append((dt, t))
+                sorted_tournaments.append((dt, t))
             except ValueError:
                 pass
-    recent.sort(key=lambda x: x[0], reverse=True)
-    print(f"Recent tournaments (since {cutoff.date()}): {len(recent)}", flush=True)
+    sorted_tournaments.sort(key=lambda x: x[0], reverse=True)
 
-    # Step 2: Fetch tournament details and collect match IDs
-    print("\n=== Fetching tournament details ===", flush=True)
-    all_matches = []
-    for i, (dt, t) in enumerate(recent):
+    # Step 2: Gather match IDs from CACHED tournament details (free, no API)
+    cached_match_ids = gather_match_ids_from_cached_tournaments()
+    cached_tourney_count = len(list(RAW.glob("tournament_*.json")))
+    print(f"Cached tournament details: {cached_tourney_count}", flush=True)
+    print(f"Match IDs from cache: {len(cached_match_ids)}", flush=True)
+
+    existing = set(f.stem for f in EXTRACTED.glob("*.json"))
+    erangel_count = len(existing)
+    erangel_ids = set(existing)
+    print(f"Already extracted Erangel: {erangel_count}", flush=True)
+
+    if erangel_count >= TARGET_ERANGEL:
+        print(f"Already at target. Done!", flush=True)
+        return
+
+    # Step 3: Process cached match IDs first (most are cache hits)
+    print(f"\n=== Phase 1: Processing {len(cached_match_ids)} matches from cached tournaments ===", flush=True)
+    checked = 0
+    for mid in cached_match_ids:
+        if mid in erangel_ids:
+            continue
+        checked += 1
+        if process_match_id(mid, erangel_ids):
+            erangel_count += 1
+            erangel_ids.add(mid)
+            print(f"  Erangel #{erangel_count} ({checked} checked)", flush=True)
+        elif checked % 100 == 0:
+            print(f"  checked {checked}, {erangel_count} Erangel so far...", flush=True)
+
+        if erangel_count >= TARGET_ERANGEL:
+            break
+
+    print(f"\nAfter phase 1: {erangel_count} Erangel from {checked} matches checked", flush=True)
+
+    if erangel_count >= TARGET_ERANGEL:
+        save_and_exit(erangel_ids, checked, erangel_count)
+        return
+
+    # Step 4: Fetch MORE tournament details and process their matches
+    print(f"\n=== Phase 2: Fetching remaining tournament details ===", flush=True)
+    cached_tids = set(f.stem.replace("tournament_", "") for f in RAW.glob("tournament_*.json"))
+
+    for i, (dt, t) in enumerate(sorted_tournaments):
         tid = t["id"]
+        if tid in cached_tids:
+            continue
+
         cache = RAW / f"tournament_{tid}.json"
-        cached = cache.exists()
         try:
             tdata = api_get(f"/tournaments/{tid}", cache)
         except requests.HTTPError as e:
-            print(f"  [{i+1}/{len(recent)}] {tid}: error {e}", flush=True)
+            print(f"  [{i+1}] {tid}: error {e}", flush=True)
             continue
 
         matches = tdata.get("data", {}).get("relationships", {}).get("matches", {}).get("data", [])
         mids = [m["id"] for m in matches]
-        if not cached:
-            print(f"  [{i+1}/{len(recent)}] {tid}: {len(mids)} matches (fetched)", flush=True)
-        all_matches.extend(mids)
+        new_count = 0
 
-    print(f"\nTotal match IDs: {len(all_matches)}", flush=True)
+        for mid in mids:
+            if mid in erangel_ids:
+                continue
+            checked += 1
+            if process_match_id(mid, erangel_ids):
+                erangel_count += 1
+                erangel_ids.add(mid)
+                new_count += 1
+                print(f"  Erangel #{erangel_count} from {tid} ({checked} total checked)", flush=True)
 
-    # Check how many Erangel matches we already have extracted
-    existing = list(EXTRACTED.glob("*.json"))
-    print(f"Already extracted: {len(existing)} matches", flush=True)
-
-    if len(existing) >= TARGET_ERANGEL:
-        erangel_ids = [f.stem for f in existing]
-        (RAW / "erangel_match_ids.json").write_text(json.dumps(erangel_ids, indent=2))
-        print(f"\nAlready have {len(existing)} Erangel matches. Done!", flush=True)
-        return
-
-    # Step 3: Fetch match details, filter Erangel, download telemetry
-    print(f"\n=== Fetching matches (target: {TARGET_ERANGEL} Erangel) ===", flush=True)
-    erangel_count = len(existing)
-    erangel_ids = [f.stem for f in existing]
-    total_checked = 0
-
-    for i, mid in enumerate(all_matches):
-        if mid in erangel_ids:
-            continue
-
-        # Check if we already know this match's map from cache
-        match_cache = RAW / f"match_{mid}.json"
-        try:
-            mdata = api_get(f"/shards/tournament/matches/{mid}", match_cache)
-        except requests.HTTPError as e:
-            print(f"  [{i+1}] error: {e}", flush=True)
-            continue
-
-        total_checked += 1
-        map_name = mdata.get("data", {}).get("attributes", {}).get("mapName", "")
-
-        if map_name != "Baltic_Main":
-            if total_checked % 50 == 0:
-                print(f"  checked {total_checked} matches, {erangel_count} Erangel so far...", flush=True)
-            continue
-
-        # It's Erangel — find telemetry URL
-        tel_url = None
-        for item in mdata.get("included", []):
-            if item.get("type") == "asset" and "telemetry" in item.get("attributes", {}).get("name", "").lower():
-                tel_url = item["attributes"]["URL"]
+            if erangel_count >= TARGET_ERANGEL:
                 break
 
-        if not tel_url:
-            print(f"  [{total_checked}] {mid[:16]}: Erangel but no telemetry URL", flush=True)
-            continue
-
-        print(f"  [{total_checked}] {mid[:16]}: Erangel! ({erangel_count+1}/{TARGET_ERANGEL})", flush=True)
-
-        if extract_telemetry(tel_url, mid):
-            erangel_count += 1
-            erangel_ids.append(mid)
-
+        if new_count == 0 and len(mids) > 0:
+            pass
         if erangel_count >= TARGET_ERANGEL:
-            print(f"\nReached target of {TARGET_ERANGEL} Erangel matches!", flush=True)
             break
 
-    # Save final list
-    (RAW / "erangel_match_ids.json").write_text(json.dumps(erangel_ids, indent=2))
+        if (i + 1) % 20 == 0:
+            print(f"  tournaments processed: {i+1}, Erangel: {erangel_count}", flush=True)
+
+    save_and_exit(erangel_ids, checked, erangel_count)
+
+
+def save_and_exit(erangel_ids, checked, erangel_count):
+    (RAW / "erangel_match_ids.json").write_text(json.dumps(sorted(erangel_ids), indent=2))
     print(f"\n=== Done! ===", flush=True)
-    print(f"Checked {total_checked} matches total", flush=True)
+    print(f"Checked {checked} matches total", flush=True)
     print(f"Erangel matches with telemetry: {erangel_count}", flush=True)
 
 

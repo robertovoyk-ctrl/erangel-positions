@@ -90,25 +90,35 @@ def assign_kills_to_phases(kills, positions, phase_bounds):
 
 
 def build_heightmap(all_positions):
-    """Build a terrain heightmap from z-samples across all matches."""
+    """Build a terrain heightmap from z-samples across all matches.
+    Filters parachute/plane positions. Returns heightmap in METERS."""
     grid_size = MAP_SIZE // GRID_RES
     height_sum = np.zeros((grid_size, grid_size), dtype=np.float64)
     height_count = np.zeros((grid_size, grid_size), dtype=np.int32)
 
     for pos in all_positions:
+        z = pos["z"]
+        if z > 25000 or z < -1000:
+            continue
         gx = int(pos["x"] / GRID_RES)
         gy = int(pos["y"] / GRID_RES)
         if 0 <= gx < grid_size and 0 <= gy < grid_size:
-            height_sum[gy, gx] += pos["z"]
+            height_sum[gy, gx] += z
             height_count[gy, gx] += 1
 
     mask = height_count > 0
     heightmap = np.zeros_like(height_sum)
     heightmap[mask] = height_sum[mask] / height_count[mask]
+    heightmap /= 100.0
     return heightmap, height_count
 
 
-def compute_slope(heightmap, cell_size=GRID_RES):
+CELL_SIZE_M = GRID_RES / 100.0
+
+
+def compute_slope(heightmap, cell_size=None):
+    if cell_size is None:
+        cell_size = CELL_SIZE_M
     dy, dx = np.gradient(heightmap, cell_size)
     return np.sqrt(dx**2 + dy**2)
 
@@ -291,7 +301,9 @@ def main():
     all_kills = []
     for f in files:
         data = json.loads(f.read_text())
-        all_kills.extend(data["kills"])
+        for k in data["kills"]:
+            k["match_id"] = data["match_id"]
+            all_kills.append(k)
 
     with open(PROCESSED / "kills.json", "w") as fp:
         json.dump(all_kills, fp)
