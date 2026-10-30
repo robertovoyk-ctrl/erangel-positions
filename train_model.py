@@ -17,18 +17,18 @@ MODEL_DIR = Path("model")
 MODEL_DIR.mkdir(exist_ok=True)
 
 FEATURE_COLS = [
-    "dist_to_white_center",
     "dist_to_blue_center",
-    "in_white",
+    "dist_to_white_center",
     "in_blue",
+    "in_white",
     "zone_edge_dist",
     "zone_edge_ratio",
     "elevation",
     "slope",
     "team_spread",
     "team_alive",
-    "white_r",
     "blue_r",
+    "white_r",
     "phase",
 ]
 

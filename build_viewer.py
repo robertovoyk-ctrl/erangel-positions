@@ -564,20 +564,20 @@ function buildFeatureVec(x, y, zoneX, zoneY, zoneR, phase) {
   const medians = DATA.model_info.phase_medians[String(phase)];
   if (!medians) return null;
   const nx = x / M, ny = y / M;
-  const distWhite = Math.sqrt((x - zoneX) ** 2 + (y - zoneY) ** 2);
-  const distBlue = medians.dist_to_blue_center;
-  const inWhite = distWhite < zoneR ? 1 : 0;
-  const inBlue = medians.in_blue;
-  const edgeDist = zoneR - distWhite;
-  const edgeRatio = distWhite / Math.max(zoneR, 1);
+  const distBlue = Math.sqrt((x - zoneX) ** 2 + (y - zoneY) ** 2);
+  const distWhite = medians.dist_to_white_center;
+  const inBlue = distBlue < zoneR ? 1 : 0;
+  const inWhite = medians.in_white;
+  const edgeDist = zoneR - distBlue;
+  const edgeRatio = distBlue / Math.max(zoneR, 1);
   const elev = getHeight(nx, ny);
   const slope = getSlope(nx, ny);
   const spread = medians.team_spread;
   const alive = medians.team_alive;
-  const whiteR = zoneR;
-  const blueR = medians.blue_r;
-  return [distWhite, distBlue, inWhite, inBlue, edgeDist, edgeRatio,
-          elev, slope, spread, alive, whiteR, blueR, phase];
+  const blueR = zoneR;
+  const whiteR = medians.white_r;
+  return [distBlue, distWhite, inBlue, inWhite, edgeDist, edgeRatio,
+          elev, slope, spread, alive, blueR, whiteR, phase];
 }
 
 // --- Confidence: count nearby team positions ---
@@ -650,7 +650,7 @@ function analyzeCircle() {
 
   const phase = currentPhase;
   const pr = DATA.phase_radii[String(phase)];
-  const radius = pr ? pr.white_r : 150000;
+  const radius = pr ? pr.blue_r : 150000;
   const cx = placedCircle.x, cy = placedCircle.y;
 
   const gridRes = 28;
@@ -708,11 +708,11 @@ function computeEntryRoute(cx, cy, radius, phase) {
   if (!prevAC) return;
 
   const target = topSpots[0];
-  const dx = target.x - prevAC.wx;
-  const dy = target.y - prevAC.wy;
+  const dx = target.x - prevAC.bx;
+  const dy = target.y - prevAC.by;
   const mag = Math.sqrt(dx * dx + dy * dy) || 1;
-  const startX = prevAC.wx + (dx / mag) * prevAC.wr;
-  const startY = prevAC.wy + (dy / mag) * prevAC.wr;
+  const startX = prevAC.bx + (dx / mag) * prevAC.br;
+  const startY = prevAC.by + (dy / mag) * prevAC.br;
 
   // Simple straight-line route with waypoints avoiding high-kill cells
   const steps = 20;
@@ -756,7 +756,7 @@ function updateAdvisorPanel() {
   }
 
   const pr = DATA.phase_radii[String(currentPhase)];
-  const radius = pr ? pr.white_r : 150000;
+  const radius = pr ? pr.blue_r : 150000;
   let html = '<div style="font-size:11px;color:#8b949e;margin-bottom:8px">' +
     'Phase ' + currentPhase + ' circle &middot; ' + Math.round(radius / 100) + 'm radius</div>';
 
@@ -843,7 +843,7 @@ function render() {
   // --- Placed circle and advisor overlay ---
   if (placedCircle) {
     const pr = DATA.phase_radii[p];
-    const radius = pr ? pr.white_r : 150000;
+    const radius = pr ? pr.blue_r : 150000;
     const pcx = px(placedCircle.x), pcy = px(placedCircle.y), prr = px(radius);
 
     // Circle outline

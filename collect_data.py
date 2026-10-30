@@ -85,12 +85,12 @@ def extract_telemetry(url, match_id):
             gs = ev.get("gameState", {})
             circles.append({
                 "elapsed": gs.get("elapsedTime", 0),
-                "white_x": gs.get("safetyZonePosition", {}).get("x", 0),
-                "white_y": gs.get("safetyZonePosition", {}).get("y", 0),
-                "white_r": gs.get("safetyZoneRadius", 0),
-                "blue_x": gs.get("poisonGasWarningPosition", {}).get("x", 0),
-                "blue_y": gs.get("poisonGasWarningPosition", {}).get("y", 0),
-                "blue_r": gs.get("poisonGasWarningRadius", 0),
+                "white_x": gs.get("poisonGasWarningPosition", {}).get("x", 0),
+                "white_y": gs.get("poisonGasWarningPosition", {}).get("y", 0),
+                "white_r": gs.get("poisonGasWarningRadius", 0),
+                "blue_x": gs.get("safetyZonePosition", {}).get("x", 0),
+                "blue_y": gs.get("safetyZonePosition", {}).get("y", 0),
+                "blue_r": gs.get("safetyZoneRadius", 0),
                 "alive": gs.get("numAliveTeams", 0),
                 "alive_players": gs.get("numAlivePlayers", 0),
             })
@@ -131,12 +131,12 @@ def extract_telemetry(url, match_id):
                 if team and rank:
                     placements[team] = rank
 
-    # Assign phases based on blue zone (poisonGasWarning) radius changes
+    # Assign phases based on white zone (poisonGasWarning) radius changes
     circles.sort(key=lambda c: c["elapsed"])
     phase = 0
     last_br = None
     for c in circles:
-        br = round(c["blue_r"])
+        br = round(c["white_r"])
         if last_br is not None and br != last_br:
             phase += 1
         last_br = br

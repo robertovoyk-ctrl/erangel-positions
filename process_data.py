@@ -133,20 +133,21 @@ def team_features(team_positions, circle, heightmap, slope_map, placements, team
 
     cx, cy, cz = np.mean(xs), np.mean(ys), np.mean(zs)
 
-    white_x = circle["white_x"]
-    white_y = circle["white_y"]
-    white_r = circle["white_r"]
-    blue_x = circle["blue_x"]
-    blue_y = circle["blue_y"]
-    blue_r = circle["blue_r"]
+    # Extracted data has old naming: white_*=safetyZone, blue_*=poisonGasWarning
+    blue_x = circle["white_x"]
+    blue_y = circle["white_y"]
+    blue_r = circle["white_r"]
+    white_x = circle["blue_x"]
+    white_y = circle["blue_y"]
+    white_r = circle["blue_r"]
 
-    dist_to_white = np.sqrt((cx - white_x)**2 + (cy - white_y)**2)
     dist_to_blue = np.sqrt((cx - blue_x)**2 + (cy - blue_y)**2)
+    dist_to_white = np.sqrt((cx - white_x)**2 + (cy - white_y)**2)
 
-    in_white = 1 if dist_to_white < white_r else 0
     in_blue = 1 if dist_to_blue < blue_r else 0
-    zone_edge_dist = white_r - dist_to_white
-    zone_edge_ratio = dist_to_white / max(white_r, 1)
+    in_white = 1 if dist_to_white < white_r else 0
+    zone_edge_dist = blue_r - dist_to_blue
+    zone_edge_ratio = dist_to_blue / max(blue_r, 1)
 
     grid_size = heightmap.shape[0]
     gx = min(max(int(cx / GRID_RES), 0), grid_size - 1)
@@ -163,18 +164,18 @@ def team_features(team_positions, circle, heightmap, slope_map, placements, team
         "centroid_x": float(cx),
         "centroid_y": float(cy),
         "centroid_z": float(cz),
-        "dist_to_white_center": float(dist_to_white),
         "dist_to_blue_center": float(dist_to_blue),
-        "in_white": in_white,
+        "dist_to_white_center": float(dist_to_white),
         "in_blue": in_blue,
+        "in_white": in_white,
         "zone_edge_dist": float(zone_edge_dist),
         "zone_edge_ratio": float(zone_edge_ratio),
         "elevation": float(elevation),
         "slope": float(slope_val),
         "team_spread": float(team_spread),
         "team_alive": team_alive,
-        "white_r": float(white_r),
         "blue_r": float(blue_r),
+        "white_r": float(white_r),
         "rank": rank,
     }
 
@@ -271,7 +272,15 @@ def main():
         all_rows.extend(rows)
 
         for c in data["circles"]:
-            circle_data.append({"match_id": data["match_id"], **c})
+            circle_data.append({
+                "match_id": data["match_id"],
+                "elapsed": c["elapsed"],
+                "white_x": c["blue_x"], "white_y": c["blue_y"], "white_r": c["blue_r"],
+                "blue_x": c["white_x"], "blue_y": c["white_y"], "blue_r": c["white_r"],
+                "alive": c.get("alive", 0),
+                "alive_players": c.get("alive_players", 0),
+                "phase": c.get("phase", 0),
+            })
 
         if (i + 1) % 10 == 0:
             print(f"  processed {i+1}/{len(files)} matches, {len(all_rows)} feature rows")
