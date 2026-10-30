@@ -1,6 +1,6 @@
 # Erangel Positioning Map
 
-**[Open the live map](https://1artemenko1.github.io/erangel-positions/)** — pick a phase, click to drop a circle, see where to rotate.
+**[Open the live map](https://robertovoyk-ctrl.github.io/erangel-positions/)** — pick a phase, click to drop a circle, see where to rotate.
 
 Data-driven positioning guide for PUBG Erangel, built from 199 pro tournament matches.
 
